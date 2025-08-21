@@ -1,0 +1,5 @@
+{% extends "storefront/base.html" %}{% block content %}
+<h1 id="mi-name">Item</h1><p id="mi-desc"></p><strong id="mi-price"></strong>
+<div><button id="add-to-cart" data-id="{{ item_id }}">Add to Cart</button></div>
+<script>window.page='menu_item';window.item_id={{ item_id }};</script>
+{% endblock %}

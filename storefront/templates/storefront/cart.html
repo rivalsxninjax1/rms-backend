@@ -1,0 +1,7 @@
+{% extends "storefront/base.html" %}{% block content %}
+<h1>Your Cart</h1><div id="cart"></div>
+<div class="card"><label>Coupon <input id="coupon" placeholder="ENTER CODE"></label>
+<button id="apply-coupon">Apply</button><div id="coupon-status"></div></div>
+<a href="/checkout/"><button>Checkout</button></a>
+<script>window.page='cart';</script>
+{% endblock %}

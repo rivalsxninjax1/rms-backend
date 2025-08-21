@@ -1,0 +1,67 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{{ SITE_NAME }}</title>
+  <link rel="stylesheet" href="{% static 'storefront/styles.css' %}">
+</head>
+<body>
+<header class="container header">
+  <a class="brand" href="/">{{ SITE_NAME }}</a>
+  <nav>
+    <a href="/">Home</a><a href="/about/">About</a><a href="/branches/">Branches</a>
+    <a href="/menu/">Menu</a><a href="/orders/">Orders</a><a href="/contact/">Contact</a>
+    <a href="/cart/">Cart (<span id="cart-count">0</span>)</a>
+    <a href="#" id="auth-link">Login</a>
+  </nav>
+</header>
+
+<!-- Auth Modal -->
+<div id="auth-modal" class="modal hidden" aria-hidden="true">
+  <div class="modal-overlay" data-close="1"></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <button class="modal-close" data-close="1" aria-label="Close">×</button>
+
+    <div id="auth-step-choose" class="modal-step">
+      <h3 id="auth-title">Welcome</h3>
+      <p>Order as a guest or create an account for faster checkout & order tracking.</p>
+      <div class="modal-actions">
+        <button id="btn-go-login">Login</button>
+        <button id="btn-go-signup">Sign up</button>
+        <button id="btn-continue-guest" class="btn-secondary">Continue as Guest</button>
+      </div>
+    </div>
+
+    <div id="auth-step-login" class="modal-step hidden">
+      <h3>Login</h3>
+      <form id="modal-login-form">
+        <label>Username <input name="username" required></label>
+        <label>Password <input name="password" type="password" required></label>
+        <button type="submit">Login</button>
+      </form>
+      <pre id="modal-login-status" class="muted"></pre>
+      <p class="muted">No account? <a href="#" id="link-to-signup">Create one</a></p>
+    </div>
+
+    <div id="auth-step-signup" class="modal-step hidden">
+      <h3>Create account</h3>
+      <form id="modal-signup-form">
+        <label>Username <input name="username" required></label>
+        <label>Email <input name="email" type="email"></label>
+        <label>First name <input name="first_name"></label>
+        <label>Last name <input name="last_name"></label>
+        <label>Password <input name="password" type="password" required></label>
+        <button type="submit">Sign up</button>
+      </form>
+      <pre id="modal-signup-status" class="muted"></pre>
+      <p class="muted">Have an account? <a href="#" id="link-to-login">Login</a></p>
+    </div>
+  </div>
+</div>
+
+<main class="container">{% block content %}{% endblock %}</main>
+
+<script src="{% static 'storefront/app.js' %}" defer></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{% extends "storefront/base.html" %}
+{% block content %}
+<h1>Checkout</h1>
+<div id="summary"></div>
+
+<form id="order-form" class="card">
+  <label>Organization UUID <input name="organization" required></label>
+  <label>Location UUID <input name="location" required></label>
+  <label>Service Type
+    <select name="service_type"><option>DINE_IN</option><option>DELIVERY</option><option>TAKEAWAY</option></select>
+  </label>
+  <button type="submit">Place Order</button>
+</form>
+
+<pre id="order-status"></pre>
+<div class="grid">
+  <button id="pay-now" style="display:none">Pay Now</button>
+  <button id="create-account" class="btn-secondary" style="display:none">Create account from this order</button>
+</div>
+<script>window.page='checkout';</script>
+{% endblock %}

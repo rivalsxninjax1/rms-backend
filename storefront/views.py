@@ -1,0 +1,11 @@
+from django.shortcuts import render
+def home(request): return render(request, "storefront/home.html")
+def about(request): return render(request, "storefront/about.html")
+def branches(request): return render(request, "storefront/branches.html")
+def menu_all(request): return render(request, "storefront/menu_all.html")
+def menu_item(request, item_id): return render(request, "storefront/menu_item.html", {"item_id": item_id})
+def cart(request): return render(request, "storefront/cart.html")
+def checkout(request): return render(request, "storefront/checkout.html")
+def orders_page(request): return render(request, "storefront/orders.html")
+def contact(request): return render(request, "storefront/contact.html")
+def login_page(request): return render(request, "storefront/login.html")

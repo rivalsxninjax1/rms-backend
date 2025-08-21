@@ -1,0 +1,120 @@
+
+{% extends "ui/base.html" %}
+{% block title %}RMS UI{% endblock %}
+{% block content %}
+
+<div class="card" style="margin-top: 16px;">
+  <nav class="tabs" id="tabs" style="margin-top: 12px;">
+    <button data-tab="auth" class="active">Auth</button>
+    <button data-tab="menu">Menu</button>
+    <button data-tab="orders">Orders</button>
+    <button data-tab="explorer">OpenAPI Explorer</button>
+  </nav>
+</div>
+
+<section id="tab-auth" class="card" style="margin-top:12px;">
+  <h3>Auth (JWT)</h3>
+  <form id="login-form" class="grid">
+    <div>
+      <label>Username</label>
+      <input id="username" placeholder="admin" required />
+    </div>
+    <div>
+      <label>Password</label>
+      <input id="password" type="password" required />
+    </div>
+    <div style="display:flex; gap:8;">
+      <button class="btn primary" type="submit">Sign in</button>
+      <button class="btn ghost" id="logout-btn" type="button">Sign out</button>
+    </div>
+    <div class="muted">JWT: <code>/api/auth/token/</code> + <code>/api/auth/token/refresh/</code></div>
+    <div id="auth-error" class="status bad" style="display:none;"></div>
+  </form>
+</section>
+
+<section id="tab-menu" class="card" style="display:none; margin-top:12px;">
+  <div style="display:flex; justify-content:space-between;">
+    <h3>Menu</h3>
+    <button class="btn" id="reload-menu">Reload</button>
+  </div>
+  <div id="menu-error" class="status bad" style="display:none;"></div>
+  <div class="grid" style="margin-top:10px;">
+    <div>
+      <h4>Categories</h4>
+      <ul id="categories"></ul>
+    </div>
+    <div>
+      <h4>Items</h4>
+      <ul id="items"></ul>
+    </div>
+  </div>
+</section>
+
+<section id="tab-orders" class="card" style="display:none; margin-top:12px;">
+  <div style="display:flex; justify-content:space-between;">
+    <h3>Orders</h3>
+    <button class="btn" id="reload-orders">Reload</button>
+  </div>
+  <div id="orders-error" class="status bad" style="display:none;"></div>
+  <div class="grid" style="margin-top:10px;">
+    <div>
+      <h4>Existing Orders</h4>
+      <ul id="orders"></ul>
+    </div>
+    <div>
+      <h4>Place Selected Order</h4>
+      <p class="muted">POST <code>/api/orders/&lt;id&gt;/place/</code></p>
+      <textarea id="place-body" spellcheck="false">{ "organization":"<org_uuid>","location":"<loc_uuid>","service_type":"DINE_IN","items":[{"menu_item":1,"name":"Margherita","qty":"1","unit_price":"9.99","total":"9.99"}] }</textarea>
+      <div style="display:flex; gap:8; margin-top:6px;">
+        <button class="btn primary" id="place-order">Place order</button>
+        <span class="muted">Select an order below</span>
+      </div>
+    </div>
+  </div>
+  <div class="grid" style="margin-top:12px;">
+    <div>
+      <h4>Create Order (raw)</h4>
+      <p class="muted">POST <code>/api/orders/</code> (if your API allows)</p>
+      <textarea id="create-body" spellcheck="false">{}</textarea>
+      <button class="btn" id="create-order" style="margin-top:6px;">POST /api/orders/</button>
+    </div>
+    <div>
+      <h4>Response</h4>
+      <pre id="orders-response" style="min-height:160px;"></pre>
+    </div>
+  </div>
+</section>
+
+<section id="tab-explorer" class="card" style="display:none; margin-top:12px;">
+  <div style="display:flex; justify-content:space-between;">
+    <h3>OpenAPI Explorer</h3>
+    <button class="btn" id="reload-schema">Reload schema</button>
+  </div>
+  <div id="schema-error" class="status bad" style="display:none;"></div>
+  <div class="grid" style="margin-top:10px;">
+    <div>
+      <label>Path</label>
+      <select id="path"></select>
+    </div>
+    <div>
+      <label>Method</label>
+      <select id="method">
+        <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+      </select>
+    </div>
+  </div>
+  <div style="margin-top:10px;">
+    <label>Body (for POST/PUT/PATCH)</label>
+    <textarea id="body" spellcheck="false">{}</textarea>
+  </div>
+  <div style="display:flex; gap:8; margin-top:8px;">
+    <button class="btn primary" id="send">Send</button>
+    <span class="muted">Uses <code>/api/schema/</code></span>
+  </div>
+  <div style="margin-top:10px;">
+    <label>Response</label>
+    <pre id="response" style="min-height:160px;"></pre>
+  </div>
+</section>
+
+{% endblock %}
