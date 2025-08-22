@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from orders.models import Order
 
+
 @csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])

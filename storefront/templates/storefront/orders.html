@@ -1,5 +1,12 @@
 {% extends "storefront/base.html" %}
 {% block content %}
 <h1>My Orders</h1>
-<div id="orders"></div>
+
+<p class="muted">This page shows your orders after you log in.</p>
+
+<div id="orders-list" class="grid"></div>
+
+<script>
+  window.page = 'orders';
+</script>
 {% endblock %}
