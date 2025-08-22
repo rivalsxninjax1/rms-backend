@@ -1,8 +1,8 @@
 from django.urls import path
-from . import views
+from .views import mock_pay
 
 app_name = "payments"
 
 urlpatterns = [
-    path("mock/pay/", views.mock_pay, name="mock-pay"),
+    path("payments/mock/pay/", mock_pay, name="mock-pay"),
 ]

@@ -1,9 +1,5 @@
-{% extends "storefront/base.html" %}{% block content %}
-<h1>Our Branches</h1><div class="grid">
-{% for b in BRANCHES %}
-  <div class="card"><h3>{{ b.name }}</h3><p>{{ b.address }}</p>
-    <iframe src="{{ b.maps_iframe }}" width="100%" height="220" style="border:0" loading="lazy"></iframe>
-  </div>
-{% endfor %}
-</div>
+{% extends "storefront/base.html" %}
+{% block content %}
+<h1>Branches</h1>
+<p>Details of our locations with maps.</p>
 {% endblock %}

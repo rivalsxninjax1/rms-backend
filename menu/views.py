@@ -1,26 +1,14 @@
-from rest_framework import viewsets
-from django_filters.rest_framework import DjangoFilterBackend
-from .models import MenuCategory, MenuItem, ModifierGroup, Modifier
-from .serializers import MenuCategorySerializer, MenuItemSerializer, ModifierGroupSerializer, ModifierSerializer
+from rest_framework import viewsets, permissions
+from .models import MenuItem, MenuCategory
+from .serializers import MenuItemSerializer, MenuCategorySerializer
 
-class MenuCategoryViewSet(viewsets.ModelViewSet):
-    queryset = MenuCategory.objects.prefetch_related('items').all()
+class MenuCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = MenuCategory.objects.all().order_by("name")
     serializer_class = MenuCategorySerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['organization', 'is_active']
+    permission_classes = [permissions.AllowAny]
 
-class MenuItemViewSet(viewsets.ModelViewSet):
-    queryset = MenuItem.objects.select_related('category').prefetch_related('modifier_groups__modifiers').all()
+class MenuItemViewSet(viewsets.ReadOnlyModelViewSet):
+    # FIX: the model uses `is_available`, not `is_active`
+    queryset = MenuItem.objects.filter(is_available=True).order_by("sort_order", "name")
     serializer_class = MenuItemSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['category', 'is_available', 'is_vegetarian']
-
-class ModifierGroupViewSet(viewsets.ModelViewSet):
-    queryset = ModifierGroup.objects.prefetch_related('modifiers', 'menu_items').all()
-    serializer_class = ModifierGroupSerializer
-
-class ModifierViewSet(viewsets.ModelViewSet):
-    queryset = Modifier.objects.select_related('modifier_group').all()
-    serializer_class = ModifierSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['modifier_group', 'is_available']
+    permission_classes = [permissions.AllowAny]

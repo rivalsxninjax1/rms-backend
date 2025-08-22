@@ -1,5 +1,7 @@
-{% extends "storefront/base.html" %}{% block content %}
-<h1 id="mi-name">Item</h1><p id="mi-desc"></p><strong id="mi-price"></strong>
-<div><button id="add-to-cart" data-id="{{ item_id }}">Add to Cart</button></div>
-<script>window.page='menu_item';window.item_id={{ item_id }};</script>
+{% extends "storefront/base.html" %}
+{% block content %}
+<h1 id="mi-name">Item</h1>
+<p id="mi-desc"></p>
+<p><strong>Price: NPR <span id="mi-price">0.00</span></strong></p>
+<button id="add-to-cart">Add to cart</button>
 {% endblock %}

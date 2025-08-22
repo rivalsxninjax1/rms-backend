@@ -1,53 +1,46 @@
 from django.contrib import admin
 from django.apps import apps
-from .models import Order
+from .models import Order, Cart, CartItem
 
 def _get_model(app_label: str, model_name: str):
-    """
-    Safe get_model that won't crash during system checks or before migrations.
-    Returns None if the model isn't ready yet.
-    """
     try:
         return apps.get_model(app_label, model_name)
-    except (LookupError, ValueError):
+    except Exception:
         return None
 
 def _field_exists(model, name: str) -> bool:
     if not model:
         return False
     try:
-        for f in model._meta.get_fields():
-            if getattr(f, "name", None) == name:
-                return True
+        return any(getattr(f, "name", None) == name for f in model._meta.get_fields())
     except Exception:
-        pass
-    return False
+        return False
 
-# Try to fetch OrderItem model safely
 OrderItem = _get_model("orders", "OrderItem")
+_raw_ids = tuple(n for n in ("menu_item", "item", "product", "menuitem") if _field_exists(OrderItem, n))
 
-# Pick a sensible raw_id field if it exists. Common names in repos: menu_item, item, product, menuitem
-_raw_id_candidates = ("menu_item", "item", "product", "menuitem")
-_raw_ids = tuple(n for n in _raw_id_candidates if _field_exists(OrderItem, n))
-
-# Define Inline only if model exists; otherwise, skip inlines to avoid admin checks blowing up
 if OrderItem:
     class OrderItemInline(admin.TabularInline):
         model = OrderItem
         extra = 0
-        # Set raw_id_fields ONLY if the matching field(s) exist
         raw_id_fields = _raw_ids
-        can_delete = True
 else:
     OrderItemInline = None
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ("id", "status", "created_at", "updated_at")
-    list_filter = ("status",)
+    list_display = ("id", "status", "service_type", "created_by", "created_at")
+    list_filter = ("status", "service_type")
     date_hierarchy = "created_at"
-    # Important: define search_fields so other admins can reference Order in autocomplete_fields
-    search_fields = ("id",)
-
-    # Attach inline if available
+    search_fields = ("id", "created_by__username")
     inlines = [OrderItemInline] if OrderItemInline else []
+
+@admin.register(Cart)
+class CartAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "session_key", "created_at")
+    search_fields = ("user__username", "session_key")
+
+@admin.register(CartItem)
+class CartItemAdmin(admin.ModelAdmin):
+    list_display = ("id", "cart", "menu_item", "quantity")
+    raw_id_fields = ("cart", "menu_item")

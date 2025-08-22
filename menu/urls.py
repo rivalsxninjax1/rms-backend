@@ -1,11 +1,13 @@
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import MenuCategoryViewSet, MenuItemViewSet, ModifierGroupViewSet, ModifierViewSet
+from .views import MenuItemViewSet, MenuCategoryViewSet
+
 app_name = "menu"
 
 router = DefaultRouter()
-router.register('menu/categories', MenuCategoryViewSet)
-router.register('menu/items', MenuItemViewSet)
-router.register('menu/modifier-groups', ModifierGroupViewSet)
-router.register('menu/modifiers', ModifierViewSet)
+router.register(r"menu/categories", MenuCategoryViewSet, basename="menu-categories")
+router.register(r"menu/items", MenuItemViewSet, basename="menu-items")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("", include(router.urls)),
+]

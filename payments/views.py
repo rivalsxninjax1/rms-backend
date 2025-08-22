@@ -1,21 +1,29 @@
 from decimal import Decimal
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Payment
+from orders.models import Order
 
+@csrf_exempt
 @api_view(["POST"])
-@permission_classes([AllowAny])  # guest checkout can pay mock
+@permission_classes([AllowAny])
 def mock_pay(request):
-    """Mock payment: captures immediately."""
+    data = request.data or {}
     try:
-        order_id = int(request.data.get("order_id"))
-        amount = Decimal(str(request.data.get("amount", "0")))
-        currency = (request.data.get("currency") or "NPR").upper()
+        order_id = int(data.get("order_id"))
+        amount = Decimal(str(data.get("amount", "0")))
     except Exception:
-        return Response({"detail": "order_id (int), amount (decimal), currency required"}, status=400)
-    if amount <= 0:
-        return Response({"detail": "amount must be > 0"}, status=400)
-    p = Payment.objects.create(order_id=order_id, amount=amount, currency=currency, provider="mock", status="captured")
-    return Response({"status": "captured", "payment_id": p.pk}, status=status.HTTP_201_CREATED)
+        return Response({"detail": "Invalid payload"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        order = Order.objects.get(pk=order_id)
+    except Order.DoesNotExist:
+        return Response({"detail": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if order.status in ("PENDING", "PLACED"):
+        order.status = "PAID"
+        order.save(update_fields=["status"])
+        return Response({"status": "captured", "order_id": order.id})
+    return Response({"status": "noop", "order_id": order.id})
