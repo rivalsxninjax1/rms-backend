@@ -5,7 +5,6 @@ from .models import Order, OrderItem
 
 
 class OrderItemCreateSerializer(serializers.ModelSerializer):
-    # DRF validates PK and returns a MenuItem instance
     menu_item = serializers.PrimaryKeyRelatedField(queryset=MenuItem.objects.all())
     quantity = serializers.IntegerField(min_value=1)
 
@@ -16,11 +15,10 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
 
 class OrderCreateSerializer(serializers.ModelSerializer):
     """
-    Creation serializer:
-    - Uses DRF PK validation for menu_item
-    - Creates OrderItems and copies unit_price from MenuItem.price
+    'items' may be omitted; the view will fallback to the session cart and
+    pass normalized items to this serializer.
     """
-    items = OrderItemCreateSerializer(many=True)
+    items = OrderItemCreateSerializer(many=True, required=False)
 
     class Meta:
         model = Order
@@ -36,7 +34,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order = Order.objects.create(created_by=created_by, **validated_data)
 
         for item in items_data:
-            mi = item["menu_item"]       # instance (validated)
+            mi: MenuItem = item["menu_item"]
             qty = item["quantity"]
             OrderItem.objects.create(
                 order=order,
@@ -48,8 +46,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         return order
 
 
-# ---------- Read serializers for "My Orders" ----------
-
+# ---------- Read serializers ("My Orders") ----------
 class OrderItemReadSerializer(serializers.ModelSerializer):
     menu_item_name = serializers.CharField(source="menu_item.name", read_only=True)
     line_total = serializers.SerializerMethodField()

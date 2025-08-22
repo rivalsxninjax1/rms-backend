@@ -1,4 +1,4 @@
-# payments/services.py
+import stripe
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -7,31 +7,43 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-
-def _safe_name(order):
-    return order.customer_name or (getattr(order, "user", None) and order.user.get_full_name()) or ""
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
-def _safe_email(order):
-    return order.customer_email or (getattr(order, "user", None) and order.user.email) or ""
+def _order_to_line_items(order):
+    currency = getattr(settings, "STRIPE_CURRENCY", "usd")
+    line_items = []
+    for it in order.items.select_related("menu_item"):
+        name = it.menu_item.name if it.menu_item else "Item"
+        unit_amount = int(Decimal(it.unit_price) * 100)
+        qty = int(it.quantity or 1)
+        line_items.append({
+            "price_data": {
+                "currency": currency,
+                "unit_amount": unit_amount,
+                "product_data": {"name": name},
+            },
+            "quantity": qty,
+        })
+    return line_items
 
 
-def generate_order_invoice_pdf(order) -> str:
-    """
-    Create a PDF invoice for this order, save to MEDIA_ROOT/orders/, and
-    return the relative path (e.g. 'orders/order-123.pdf').
-    """
-    # Compute totals + estimated wait (longest prep_minutes)
-    total = Decimal("0.00")
-    longest_prep = 0
-    items = list(order.items.select_related("product"))
+def create_checkout_session(order):
+    session = stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        line_items=_order_to_line_items(order),
+        mode="payment",
+        success_url=f"{settings.DOMAIN}/payments/success/?order_id={order.id}",
+        cancel_url=f"{settings.DOMAIN}/payments/cancel/",
+        metadata={"order_id": order.id},
+    )
+    return session
 
-    for it in items:
-        total += it.unit_price * it.quantity
-        if it.product and it.product.prep_minutes:
-            longest_prep = max(longest_prep, it.product.prep_minutes)
 
-    # Render PDF to memory
+def generate_order_invoice_pdf(order):
+    items = list(order.items.select_related("menu_item").all())
+
+    # Build PDF
     buf = BytesIO()
     p = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -42,12 +54,8 @@ def generate_order_invoice_pdf(order) -> str:
     p.drawString(20 * mm, y, f"Invoice – Order #{order.id}")
     y -= 10 * mm
 
-    # Customer details
+    # Date
     p.setFont("Helvetica", 10)
-    p.drawString(20 * mm, y, f"Customer: {_safe_name(order)}")
-    y -= 6 * mm
-    p.drawString(20 * mm, y, f"Email: {_safe_email(order)}")
-    y -= 6 * mm
     p.drawString(20 * mm, y, f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}")
     y -= 12 * mm
 
@@ -62,38 +70,35 @@ def generate_order_invoice_pdf(order) -> str:
     y -= 5 * mm
     p.setFont("Helvetica", 10)
 
-    # Items
+    total = Decimal("0")
     for it in items:
-        name = it.product.name if it.product else "Item"
-        line_total = it.unit_price * it.quantity
-        p.drawString(20 * mm, y, name[:42])
-        p.drawRightString(120 * mm, y, str(it.quantity))
-        p.drawRightString(150 * mm, y, f"{it.unit_price:.2f}")
+        name = it.menu_item.name if it.menu_item else "Item"
+        qty = int(it.quantity or 1)
+        price = Decimal(it.unit_price or 0)
+        line_total = price * qty
+        total += line_total
+
+        p.drawString(20 * mm, y, name[:45])
+        p.drawRightString(120 * mm, y, str(qty))
+        p.drawRightString(150 * mm, y, f"{price:.2f}")
         p.drawRightString(190 * mm, y, f"{line_total:.2f}")
         y -= 6 * mm
-        if y < 30 * mm:
-            p.showPage()
-            y = height - 20 * mm
-            p.setFont("Helvetica", 10)
 
-    # Summary
-    y -= 5 * mm
-    p.setFont("Helvetica-Bold", 11)
-    p.drawRightString(190 * mm, y, f"Total: {total:.2f}")
-    y -= 10 * mm
-    p.setFont("Helvetica", 10)
-    p.drawString(20 * mm, y, f"Estimated waiting time: {longest_prep} minutes")
+    y -= 6 * mm
+    p.line(20 * mm, y, 190 * mm, y)
+    y -= 8 * mm
+    p.setFont("Helvetica-Bold", 12)
+    p.drawRightString(150 * mm, y, "Total")
+    p.drawRightString(190 * mm, y, f"{total:.2f}")
     p.showPage()
     p.save()
 
-    # Save file
     rel_dir = "orders"
     rel_path = f"{rel_dir}/order-{order.id}.pdf"
     out_dir = Path(settings.MEDIA_ROOT) / rel_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     (Path(settings.MEDIA_ROOT) / rel_path).write_bytes(buf.getvalue())
 
-    # Persist on model
     order.invoice_pdf.name = rel_path
     order.save(update_fields=["invoice_pdf"])
     return rel_path
