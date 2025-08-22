@@ -34,3 +34,6 @@ def contact(request):
 
 def login_page(request):
     return render(request, "storefront/login.html", _ctx("login"))
+
+def reservations(request):
+    return render(request, "storefront/reservations.html", _ctx("reservations"))

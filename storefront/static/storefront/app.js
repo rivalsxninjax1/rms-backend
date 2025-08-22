@@ -6,17 +6,6 @@ const auth = {
   clear() { localStorage.removeItem("jwt_access"); localStorage.removeItem("jwt_refresh"); }
 };
 
-// === Org/Loc defaults ===
-function getOrg(){ return localStorage.getItem("org_pk") || ""; }
-function getLoc(){ return localStorage.getItem("loc_pk") || ""; }
-function qsOrgLoc(){
-  const o=getOrg(), l=getLoc();
-  const qs = [];
-  if (o) qs.push("organization="+encodeURIComponent(o));
-  if (l) qs.push("location="+encodeURIComponent(l));
-  return qs.length ? ("?"+qs.join("&")) : "";
-}
-
 // === Cart (local) ===
 function cartGet(){ return JSON.parse(localStorage.getItem("cart") || "[]"); }
 function cartSet(items){ localStorage.setItem("cart", JSON.stringify(items)); cartCount(); }
@@ -37,12 +26,12 @@ async function api(path, opts={}, retry=true){
     auth.setTokens(jd.access, jd.refresh);
     opts.headers["Authorization"]="Bearer "+jd.access;
     const second = await _fetch(path, opts);
-    if(!second.res.ok) throw {status:second.res.status, data:second.data}; 
+    if(!second.res.ok) throw {status:second.res.status, data:second.data};
     return second.data;
   } else { auth.clear(); throw {status:res.status, data}; }
 }
 
-// === Modal ===
+// === Auth modal (same as before, trimmed for brevity) ===
 const modalEl = ()=>document.getElementById("auth-modal");
 function showStep(name){ ["choose","login","signup"].forEach(s=>{ const el=document.getElementById("auth-step-"+s); if(el) el.classList.toggle("hidden", s!==name); }); }
 function openAuthModal(step="choose"){ const m=modalEl(); if(!m) return; m.classList.remove("hidden"); m.setAttribute("aria-hidden","false"); showStep(step); }
@@ -65,8 +54,19 @@ function bindAuthModal(){
       body: JSON.stringify({ username: fd.get("username"), password: fd.get("password") }) });
     const data = await r.json().catch(()=>({}));
     const st = document.getElementById("modal-login-status");
-    if (r.ok && data.access){ auth.setTokens(data.access, data.refresh); st.textContent="Logged in."; closeAuthModal(); refreshHeaderAuth(); syncCartToServer(); }
-    else { st.textContent = (data && data.detail) ? data.detail : "Login failed."; }
+    if (r.ok && data.access){
+      auth.setTokens(data.access, data.refresh);
+      st.textContent="Logged in.";
+      try{
+        await api("/api/cart/claim/", { method:"POST", body:"{}" });
+        const server = await api("/api/cart/", { method:"GET" });
+        const sitems = (server.items||[]).map(i=>({ menu_item:i.menu_item, qty:i.quantity, name:"Item", unit_price:0, total:0 }));
+        cartSet(sitems);
+      }catch(e){ console.warn("claim failed", e); }
+      closeAuthModal(); refreshHeaderAuth();
+    } else {
+      st.textContent = (data && data.detail) ? data.detail : "Login failed.";
+    }
   });
 
   const signupForm = document.getElementById("modal-signup-form");
@@ -79,32 +79,53 @@ function bindAuthModal(){
     const r = await fetch("/api/auth/register/", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
     const data = await r.json().catch(()=>({}));
     const st = document.getElementById("modal-signup-status");
-    if (r.ok && data.access){ auth.setTokens(data.access, data.refresh); st.textContent="Account created & logged in."; closeAuthModal(); refreshHeaderAuth(); syncCartToServer(); }
-    else { st.textContent = typeof data === "object" ? JSON.stringify(data) : "Signup failed."; }
+    if (r.ok && data.access){
+      auth.setTokens(data.access, data.refresh);
+      st.textContent="Account created & logged in.";
+      try{
+        await api("/api/cart/claim/", { method:"POST", body:"{}" });
+        const server = await api("/api/cart/", { method:"GET" });
+        const sitems = (server.items||[]).map(i=>({ menu_item:i.menu_item, qty:i.quantity, name:"Item", unit_price:0, total:0 }));
+        cartSet(sitems);
+      }catch(e){ console.warn("claim failed", e); }
+      closeAuthModal(); refreshHeaderAuth();
+    } else {
+      st.textContent = typeof data === "object" ? JSON.stringify(data) : "Signup failed.";
+    }
   });
 }
 
-// === Header auth link ===
 function refreshHeaderAuth(){
   const link = document.getElementById("auth-link"); if(!link) return;
-  if (auth.access()){ link.textContent="Logout"; link.onclick=(e)=>{e.preventDefault();auth.clear();location.reload();}; }
-  else { link.textContent="Login"; link.onclick=(e)=>{e.preventDefault();openAuthModal("choose");}; }
+  if (auth.access()){
+    link.textContent="Logout";
+    link.onclick = async (e)=>{
+      e.preventDefault();
+      auth.clear();
+      cartSet([]);
+      try{ await api("/api/cart/reset_session/", { method:"POST", body:"{}" }); }catch(e){}
+      location.reload();
+    };
+  } else {
+    link.textContent="Login";
+    link.onclick=(e)=>{e.preventDefault();openAuthModal("choose");};
+  }
 }
 
 // === Menu ===
 async function loadMenu(){
   const wrap = document.getElementById("menu-grid"); if(!wrap) return;
   try{
-    const data = await api("/api/menu/items/"+qsOrgLoc());
+    const data = await api("/api/menu/items/");
     const items = Array.isArray(data) ? data : (data.results||[]);
-    if (!items.length){ wrap.innerHTML = `<div class="card">No items available. Check Admin → Menu → Items (active & priced).</div>`; return; }
+    if (!items.length){ wrap.innerHTML = `<div class="card">No items available.</div>`; return; }
     wrap.innerHTML = items.map(i=>`
       <div class="card">
-        <h3>${i.name || i.title || "Item"}</h3>
+        <h3>${i.name || "Item"}</h3>
         <p>${i.description || ""}</p>
-        <strong>NPR ${money(i.price || i.unit_price || i.amount)}</strong><br/>
+        <strong>NPR ${money(i.price || 0)}</strong><br/>
         <a href="/menu/${i.id}/"><button>View</button></a>
-        <button data-id="${i.id}" data-name="${i.name || "Item"}" data-price="${i.price || i.unit_price || 0}">Add</button>
+        <button data-id="${i.id}" data-name="${i.name || "Item"}" data-price="${i.price || 0}">Add</button>
       </div>
     `).join("");
     wrap.querySelectorAll("button[data-id]").forEach(b=>{
@@ -115,25 +136,25 @@ async function loadMenu(){
 
 async function loadMenuItem(id){
   try{
-    const data = await api("/api/menu/items/"+qsOrgLoc());
+    const data = await api("/api/menu/items/");
     const items = Array.isArray(data) ? data : (data.results||[]);
     const itm = items.find(x=>x.id===id);
     if(!itm){ document.getElementById("mi-name").textContent="Item not found"; return; }
     document.getElementById("mi-name").textContent = itm.name || "Item";
     document.getElementById("mi-desc").textContent = itm.description || "";
-    document.getElementById("mi-price").textContent = money(itm.price || itm.unit_price || 0);
+    document.getElementById("mi-price").textContent = money(itm.price || 0);
     const btn = document.getElementById("add-to-cart");
-    if (btn) btn.onclick = ()=>addToCart(itm.id, itm.name, (itm.price || itm.unit_price || 0));
+    if (btn) btn.onclick = ()=>addToCart(itm.id, itm.name, (itm.price || 0));
   }catch(e){ console.error(e); }
 }
 
-// === Cart / Coupon ===
+// === Cart ===
 function addToCart(id,name,unit_price){
   const cur=cartGet(); const ex=cur.find(x=> (x.menu_item===id) || (x.id===id));
   if(ex){ ex.qty=(Number(ex.qty||0)+1); ex.total=money(ex.qty*unit_price); }
   else { cur.push({ menu_item:id, name, qty:1, unit_price:money(unit_price), total:money(unit_price) }); }
   cartSet(cur);
-  if (auth.access()) syncCartToServer();
+  syncCartToServer();
 }
 function renderCart(){
   const el=document.getElementById("cart"); if(!el) return;
@@ -143,18 +164,8 @@ function renderCart(){
     <div class="card">
       <ul>${items.map(i=>`<li>${i.name} × ${i.qty} = NPR ${money(i.total)}</li>`).join("")}</ul>
       <strong>Subtotal: <span id="subtotal">${money(total)}</span></strong>
-      <div id="discount-line" style="display:none">Discount: -<span id="discount">0.00</span></div>
       <div>Payable: <strong id="payable">${money(total)}</strong></div>
     </div>`;
-}
-async function applyCoupon(){
-  const code=(document.getElementById("coupon").value||"").trim().toUpperCase(); if(!code) return;
-  const res = await api("/api/promotions/validate/", { method:"POST", body:JSON.stringify({code}) });
-  const st = document.getElementById("coupon-status"); const subtotal=Number(document.getElementById("subtotal").textContent);
-  if(res.valid){ const disc=subtotal*(res.discount_percent/100); document.getElementById("discount").textContent=money(disc);
-    document.getElementById("discount-line").style.display=""; document.getElementById("payable").textContent=money(subtotal-disc);
-    st.textContent=`Applied ${res.discount_percent}%`; localStorage.setItem("coupon_code",code); localStorage.setItem("coupon_discount",String(res.discount_percent));
-  } else { st.textContent="Invalid/expired coupon"; localStorage.removeItem("coupon_code"); localStorage.removeItem("coupon_discount"); }
 }
 
 // === Server cart sync ===
@@ -164,93 +175,90 @@ async function syncCartToServer(){
     await api("/api/cart/sync/", { method:"POST", body: JSON.stringify({items}) });
   }catch(e){ console.warn("cart sync failed", e); }
 }
-async function loadServerCartAndMerge(){
-  if (!auth.access()) return;
+async function loadServerCartAndAdopt(){
   try{
     const server = await api("/api/cart/");
     const sitems = (server.items||[]).map(i=>({ menu_item:i.menu_item, qty:i.quantity, name:"Item", unit_price:0, total:0 }));
-    if (sitems.length){
-      // If local is empty, just adopt server; else keep local (local built from UI with names/prices)
-      if (!cartGet().length){ cartSet(sitems); }
-    }
-  }catch(e){ console.warn("cart fetch failed", e); }
+    cartSet(sitems);
+  }catch(e){ /* no server cart yet */ }
 }
 
-// === Checkout ===
+// === Checkout: place order -> immediately open payment (mock) ===
 async function placeOrder(evt){
   evt.preventDefault();
   const items=cartGet(); if(!items.length) return alert("Cart empty");
 
   const fd=new FormData(evt.target);
-  let org = (fd.get("organization") || "").trim();
-  let loc = (fd.get("location") || "").trim();
-
-  const isInt = (s)=>/^\d+$/.test(s);
-  const organization = isInt(org) ? Number(org) : undefined;
-  const location = isInt(loc) ? Number(loc) : undefined;
-
-  const orderItems = items
-    .map(i => {
-      const id = Number(i.menu_item || i.id || (i.menu_item && i.menu_item.id));
-      const q = Number(i.qty || i.quantity || 1);
-      return (id && q>0) ? { menu_item: id, quantity: q } : null;
-    }).filter(Boolean);
-
   const payload = {
     service_type: fd.get("service_type") || "DINE_IN",
-    items: orderItems
+    items: items.map(i=>({ menu_item: Number(i.menu_item || i.id), quantity: Number(i.qty || 1) }))
   };
-  if (organization !== undefined) payload.organization = organization;
-  if (location !== undefined) payload.location = location;
 
   const statusEl = document.getElementById("order-status");
+  const payBtn = document.getElementById("pay-now");
+  const acctBtn = document.getElementById("create-account");
 
   try{
     const order = await api("/api/orders/", { method:"POST", body:JSON.stringify(payload) });
-    try { await api(`/api/orders/${order.id}/place/`, { method:"POST" }); } catch {}
+    await api(`/api/orders/${order.id}/place/`, { method:"POST" });
 
-    const btn=document.getElementById("pay-now");
-    const acct=document.getElementById("create-account");
+    // Immediately "open" payment (mock capture)
     const payable = Number(document.getElementById("payable").textContent || "0");
+    const res = await api("/api/payments/mock/pay/", {
+      method:"POST",
+      body:JSON.stringify({ order_id:order.id, amount:money(payable), currency:"NPR" })
+    });
 
-    if(btn){
-      btn.style.display="";
-      btn.onclick=async ()=>{
-        try{
-          const res = await api("/api/payments/mock/pay/", {
+    if(res.status==="captured"){
+      statusEl.textContent = "Payment success";
+      cartSet([]);
+      await syncCartToServer();
+    } else {
+      statusEl.textContent = "Payment failed. Try Pay Now.";
+      if (payBtn){
+        payBtn.style.display="";
+        payBtn.onclick = async ()=>{
+          const again = await api("/api/payments/mock/pay/", {
             method:"POST",
             body:JSON.stringify({ order_id:order.id, amount:money(payable), currency:"NPR" })
           });
-          statusEl.textContent = res.status==="captured" ? "Payment success" : "Payment failed";
-          if(res.status==="captured") { localStorage.removeItem("cart"); await syncCartToServer(); }
-          if(acct && !auth.access()){ acct.style.display=""; acct.onclick=()=>openAuthModal("signup"); }
-        }catch(err){
-          statusEl.textContent = `Payment error: ${JSON.stringify(err.data || err)}`;
-        }
-      };
+          statusEl.textContent = again.status==="captured" ? "Payment success" : "Payment failed";
+          if(again.status==="captured"){ cartSet([]); await syncCartToServer(); }
+        };
+      }
+    }
+
+    // Offer to create account if still guest
+    if(acctBtn && !auth.access()){
+      acctBtn.style.display="";
+      acctBtn.onclick=()=>openAuthModal("signup");
     }
   }catch(err){
     statusEl.textContent = `Order error (${err.status||"400"}): ${JSON.stringify(err.data || err)}`;
   }
 }
 
-// === Orders (prompt login) ===
+// === Orders list (with invoice links) ===
 async function loadOrders(){
   const el=document.getElementById("orders"); if(!el) return;
   try{
     const data = await api("/api/orders/");
     const items = Array.isArray(data)?data:(data.results||[]);
-    el.innerHTML = items.map(o=>`<div class="card"><div><strong>Order #${o.id}</strong> — ${o.status||"PENDING"}</div></div>`).join("");
+    el.innerHTML = items.map(o=>`
+      <div class="card">
+        <div><strong>Order #${o.id}</strong> — ${o.status||"PENDING"}</div>
+        <div><a href="/api/orders/${o.id}/invoice/" target="_blank">Invoice</a></div>
+      </div>`).join("");
   }catch{ el.innerHTML="<p>Login to view orders.</p>"; openAuthModal("login"); }
 }
 
 // === Boot ===
 document.addEventListener("DOMContentLoaded", async ()=>{
   bindAuthModal(); refreshHeaderAuth(); cartCount();
-  await loadServerCartAndMerge(); // if logged-in, hydrate cart
+  await loadServerCartAndAdopt();
   if(window.page==='menu') loadMenu();
   if(window.page==='menu_item') loadMenuItem(window.item_id);
-  if(window.page==='cart'){ renderCart(); const btn=document.getElementById("apply-coupon"); if(btn) btn.onclick=applyCoupon; }
+  if(window.page==='cart'){ renderCart(); }
   if(window.page==='checkout'){ renderCart(); const f=document.getElementById("order-form"); if(f) f.addEventListener("submit",placeOrder); if(!auth.access()) openAuthModal("choose"); }
   if(window.page==='orders') loadOrders();
 });

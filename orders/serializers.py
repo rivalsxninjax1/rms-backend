@@ -1,14 +1,7 @@
 from typing import Iterable, Set, Any, Dict
 from django.db import transaction
 from rest_framework import serializers
-from .models import Order, OrderItem, Cart, CartItem
-
-try:
-    from core.models import Organization, Location
-except Exception:
-    Organization = None
-    Location = None
-
+from .models import Order, OrderItem
 
 def _as_int(val) -> int | None:
     if val in (None, "", "null"):
@@ -17,7 +10,6 @@ def _as_int(val) -> int | None:
         return int(str(val).strip())
     except Exception:
         return None
-
 
 def _extract_menu_item_id(item: Dict[str, Any]) -> int | None:
     if "menu_item" in item:
@@ -30,7 +22,6 @@ def _extract_menu_item_id(item: Dict[str, Any]) -> int | None:
             return _as_int(item.get(k))
     return None
 
-
 class OrderItemCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
@@ -41,34 +32,13 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Quantity must be at least 1.")
         return value
 
-
 class OrderCreateSerializer(serializers.ModelSerializer):
-    organization = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    location = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Only keep what we actually need for a simple checkout
     items = OrderItemCreateSerializer(many=True)
 
     class Meta:
         model = Order
-        fields = ("id", "service_type", "organization", "location", "items")
-
-    def _resolve_org_loc(self, attrs):
-        org_in = attrs.pop("organization", None)
-        loc_in = attrs.pop("location", None)
-        org_obj = None
-        loc_obj = None
-        org_pk = _as_int(org_in)
-        loc_pk = _as_int(loc_in)
-        if Organization and org_pk:
-            try:
-                org_obj = Organization.objects.get(pk=org_pk)
-            except Organization.DoesNotExist:
-                pass
-        if Location and loc_pk:
-            try:
-                loc_obj = Location.objects.get(pk=loc_pk)
-            except Location.DoesNotExist:
-                pass
-        return org_obj, loc_obj
+        fields = ("id", "service_type", "items")
 
     def _normalize_items(self, items: Iterable[dict]) -> list[dict]:
         norm: list[dict] = []
@@ -111,45 +81,21 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
         items_data = validated_data.pop("items", [])
         self._validate_menu_items_exist(items_data)
-        org_obj, loc_obj = self._resolve_org_loc(validated_data)
 
         order = Order.objects.create(
             created_by=created_by,
-            organization=org_obj,
-            location=loc_obj,
             **validated_data,
         )
 
+        # Persist unit_price from current MenuItem price so reports/invoices work
+        from menu.models import MenuItem
         for item in items_data:
-            OrderItem.objects.create(order=order, **item)
-
-        # optional: clear user's server cart after ordering
-        try:
-            if request.session.session_key is None:
-                request.session.save()
-            cart = None
-            if created_by:
-                cart = Cart.objects.filter(user=created_by).first()
-            if not cart:
-                cart = Cart.objects.filter(session_key=request.session.session_key).first()
-            if cart:
-                cart.items.all().delete()
-        except Exception:
-            pass
+            mi = MenuItem.objects.get(pk=item["menu_item"])
+            OrderItem.objects.create(
+                order=order,
+                menu_item=mi,
+                quantity=item["quantity"],
+                unit_price=mi.price or 0,
+            )
 
         return order
-
-
-# --- Cart serializers ---
-class CartItemSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CartItem
-        fields = ("menu_item", "quantity")
-
-
-class CartSerializer(serializers.ModelSerializer):
-    items = CartItemSerializer(many=True)
-
-    class Meta:
-        model = Cart
-        fields = ("id", "items")
