@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Payment successful ✅</h1>
+
+{% if order %}
+  <p>Thanks! Your payment for <strong>Order #{{ order.id }}</strong> is confirmed.</p>
+
+  {% if order.invoice_pdf %}
+    <p><a class="btn" href="{{ order.invoice_pdf.url }}" target="_blank" rel="noopener">Download your invoice (PDF)</a></p>
+  {% else %}
+    <p>Your invoice is being generated. This page will refresh automatically.</p>
+    <script>setTimeout(function(){ location.reload(); }, 2000);</script>
+  {% endif %}
+{% else %}
+  <p>We couldn’t find your order, but your payment was successful. Please check your email.</p>
+{% endif %}
+{% endblock %}

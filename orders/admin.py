@@ -1,31 +1,32 @@
+# orders/admin.py
 from django.contrib import admin
-from .models import Order, OrderItem, Cart, CartItem
+from .models import Product, Order, OrderItem
 
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
-    raw_id_fields = ("menu_item",)
+    raw_id_fields = ("product",)
+
+
+@admin.register(Product)
+class ProductAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "price", "prep_minutes")
+    search_fields = ("name",)
 
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ("id", "status", "service_type", "created_by", "organization", "location", "created_at")
-    list_filter = ("status", "service_type", "created_at")
+    list_display = ("id", "user", "customer_name", "customer_email", "is_paid", "created_at", "invoice_pdf")
+    list_filter = ("is_paid", "created_at")
     date_hierarchy = "created_at"
-    search_fields = ("id", "created_by__username")
-    raw_id_fields = ("created_by", "organization", "location")
     inlines = [OrderItemInline]
 
-
-@admin.register(Cart)
-class CartAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "session_key", "created_at")
-    search_fields = ("user__username", "session_key")
+    # REQUIRED for other admins' autocomplete_fields -> order
+    # '=id' enables exact ID search; others allow name/email lookups
+    search_fields = ("=id", "customer_name", "customer_email", "user__username", "user__email")
     raw_id_fields = ("user",)
 
-
-@admin.register(CartItem)
-class CartItemAdmin(admin.ModelAdmin):
-    list_display = ("id", "cart", "menu_item", "quantity")
-    raw_id_fields = ("cart", "menu_item")
+    # Optional: speed up queries when listing orders
+    list_select_related = ("user",)
+    ordering = ("-created_at",)

@@ -52,11 +52,9 @@ async function api(path, opts={}, retry=true){
 }
 
 // === Small utils ===
-function fmtDT(iso){
-  try{ return new Date(iso).toLocaleString(); }catch{ return iso || ""; }
-}
+function fmtDT(iso){ try{ return new Date(iso).toLocaleString(); }catch{ return iso || ""; } }
 
-// === Auth modal ===
+// === Auth modal (login/signup only; no guest) ===
 const modalEl = ()=>document.getElementById("auth-modal");
 function showStep(name){
   ["choose","login","signup"].forEach(s=>{
@@ -64,7 +62,7 @@ function showStep(name){
     if (el) el.classList.toggle("hidden", s!==name);
   });
 }
-function openAuthModal(step="choose"){
+function openAuthModal(step="login"){
   const m = modalEl(); if(!m) return;
   m.classList.remove("hidden"); m.setAttribute("aria-hidden","false");
   showStep(step);
@@ -77,7 +75,7 @@ function closeAuthModal(){
 function refreshHeaderAuth(){
   const link = document.getElementById("auth-link"); if(!link) return;
 
-  // Hide/Show "My Orders" link based on login (works with id or href fallback)
+  // Only gate "My Orders" link by login (Menu stays public)
   const ordersLink = document.getElementById("nav-orders") || document.querySelector('a[href="/orders/"]');
   if (ordersLink) ordersLink.style.display = auth.access() ? "inline-block" : "none";
 
@@ -85,7 +83,6 @@ function refreshHeaderAuth(){
     link.textContent="Logout";
     link.onclick = async (e)=>{
       e.preventDefault();
-      // Clear auth + cart and reset session (start as a fresh guest)
       auth.clear();
       cartSet([]);
       try { await api("/api/cart/reset_session/", { method:"POST", body:"{}" }); } catch {}
@@ -101,7 +98,7 @@ function bindAuthModal(){
   const m = modalEl(); if(!m) return;
   m.addEventListener("click", (e)=>{ if (e.target.dataset.close) closeAuthModal(); });
 
-  // REMOVE / DISABLE "Continue as guest"
+  // No guest button
   const guestBtn = document.getElementById("btn-continue-guest");
   if (guestBtn) { guestBtn.style.display = "none"; guestBtn.disabled = true; }
 
@@ -121,7 +118,6 @@ function bindAuthModal(){
     const data = await r.json().catch(()=>({}));
     const st = document.getElementById("modal-login-status");
     if (r.ok) {
-      // Fresh cart for new user login
       cartSet([]);
       try { await api("/api/cart/reset_session/", { method:"POST", body:"{}" }); } catch {}
       auth.setTokens(data.access, data.refresh);
@@ -149,14 +145,12 @@ function bindAuthModal(){
     });
     const st = document.getElementById("modal-signup-status");
     if (res.ok) {
-      // Auto-login after signup
       const r = await fetch("/api/auth/token/", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ username: payload.username, password: payload.password })
       });
       const data = await r.json().catch(()=>({}));
       if (r.ok) {
-        // Fresh cart for new user
         cartSet([]);
         try { await api("/api/cart/reset_session/", { method:"POST", body:"{}" }); } catch {}
         auth.setTokens(data.access, data.refresh);
@@ -172,11 +166,11 @@ function bindAuthModal(){
   });
 }
 
-// === Menu ===
+// === Menu (public) ===
 async function loadMenu(){
   const wrap = document.getElementById("menu-grid"); if(!wrap) return;
   try{
-    const data = await api("/api/menu/items/");
+    const data = await api("/api/menu/items/", { headers: { "Content-Type":"application/json" } });
     const items = Array.isArray(data) ? data : (data.results||[]);
     if (!items.length){ wrap.innerHTML = `<div class="card">No items available.</div>`; return; }
     wrap.innerHTML = items.map(i=>`
@@ -200,7 +194,7 @@ async function loadMenu(){
 async function loadMenuItem(id){
   const wrap = document.getElementById("menu-item"); if(!wrap) return;
   try{
-    const i = await api(`/api/menu/items/${id}/`);
+    const i = await api(`/api/menu/items/${id}/`, { headers: { "Content-Type":"application/json" } });
     wrap.innerHTML = `
       <div class="card">
         <h2>${i.name || "Item"}</h2>
@@ -219,20 +213,20 @@ async function loadMenuItem(id){
 // === Cart actions ===
 function addToCart(id, name, unit_price){
   const cur = cartGet();
-  const ex = cur.find(x => (x.menu_item===id) || (x.id===id));
+  const ex = cur.find(x => (x.product===id) || (x.menu_item===id) || (x.id===id));
   if(ex){
     ex.qty = Number(ex.qty||0) + 1;
     ex.total = money(ex.qty * unit_price);
   } else {
-    cur.push({ menu_item:id, name, qty:1, unit_price:money(unit_price), total:money(unit_price) });
+    cur.push({ product:id, name, qty:1, unit_price:money(unit_price), total:money(unit_price) });
   }
   cartSet(cur);
   syncCartToServer();
 }
 
-function changeQty(menu_item, delta){
+function changeQty(product, delta){
   const cur = cartGet();
-  const it = cur.find(x => (x.menu_item===menu_item) || (x.id===menu_item));
+  const it = cur.find(x => (x.product===product) || (x.menu_item===product) || (x.id===product));
   if (!it) return;
   const price = Number(it.unit_price);
   it.qty = Math.max(0, Number(it.qty||0) + delta);
@@ -260,11 +254,11 @@ function renderCart(){
           <li class="row" style="justify-content:space-between; align-items:center;">
             <span>${i.name}</span>
             <div class="row" style="gap:6px;">
-              <button data-minus="${i.menu_item}">−</button>
+              <button data-minus="${i.product}">−</button>
               <strong>${i.qty}</strong>
-              <button data-plus="${i.menu_item}">+</button>
+              <button data-plus="${i.product}">+</button>
               <span>NPR ${money(i.total)}</span>
-              <button data-remove="${i.menu_item}">x</button>
+              <button data-remove="${i.product}">x</button>
             </div>
           </li>
         `).join("")}
@@ -283,27 +277,25 @@ function renderCart(){
   el.querySelectorAll("button[data-remove]").forEach(b=>{
     b.onclick = ()=>{
       const id = Number(b.dataset.remove);
-      const cur = cartGet().filter(x => x.menu_item !== id);
+      const cur = cartGet().filter(x => x.product !== id && x.menu_item !== id);
       cartSet(cur); renderCart(); syncCartToServer();
     };
   });
 }
 
-// === Server cart sync ===
+// === Server cart sync (session cart API) ===
 async function syncCartToServer(){
   try{
-    const items = (cartGet()||[]).map(i=>({ menu_item: i.menu_item || i.id, quantity: Number(i.qty||1) }));
+    const items = (cartGet()||[]).map(i=>({ product: i.product || i.menu_item || i.id, quantity: Number(i.qty||1) }));
     await api("/api/cart/sync/", { method:"POST", body: JSON.stringify({items}) });
   }catch(e){ console.warn("cart sync failed", e); }
 }
-
 async function loadServerCartAndAdopt(){
-  // Only adopt from server if local cart is empty
   const local = cartGet();
   if (Array.isArray(local) && local.length) return;
   try{
     const server = await api("/api/cart/");
-    const sitems = (server.items||[]).map(i=>({ menu_item:i.menu_item, qty:i.quantity, name:"Item", unit_price:0, total:0 }));
+    const sitems = (server.items||[]).map(i=>({ product:i.product, qty:i.quantity, name:"Item", unit_price:0, total:0 }));
     if (sitems.length) {
       cartSet(sitems);
       cartCount();
@@ -312,11 +304,10 @@ async function loadServerCartAndAdopt(){
   }catch(e){ /* no server cart yet */ }
 }
 
-// === Checkout: place order -> immediately open payment (mock) ===
+// === Checkout (require login) ===
 async function placeOrder(evt){
   evt.preventDefault();
 
-  // Require login so orders appear in "My Orders"
   if (!auth.access()) {
     openAuthModal("login");
     const statusEl = document.getElementById("order-status");
@@ -325,28 +316,19 @@ async function placeOrder(evt){
   }
 
   let items = cartGet() || [];
-  // Filter out bad entries and coerce to numbers
   items = items
-    .map(i => ({ menu_item: Number(i.menu_item || i.id), quantity: Number(i.qty || i.quantity || 1) }))
-    .filter(i =>
-      Number.isFinite(i.menu_item) && i.menu_item > 0 &&
-      Number.isFinite(i.quantity) && i.quantity > 0
-    );
+    .map(i => ({ product: Number(i.product || i.menu_item || i.id), quantity: Number(i.qty || i.quantity || 1) }))
+    .filter(i => Number.isFinite(i.product) && i.product > 0 && Number.isFinite(i.quantity) && i.quantity > 0);
 
-  // Fallback: if local cart empty, try server cart
   if (!items.length) {
     try {
       const server = await api("/api/cart/");
       const sitems = (server.items||[])
-        .map(i => ({ menu_item: Number(i.menu_item || i.id), quantity: Number(i.quantity || i.qty || 1) }))
-        .filter(i =>
-          Number.isFinite(i.menu_item) && i.menu_item > 0 &&
-          Number.isFinite(i.quantity) && i.quantity > 0
-        );
+        .map(i => ({ product: Number(i.product || i.id), quantity: Number(i.quantity || i.qty || 1) }))
+        .filter(i => Number.isFinite(i.product) && i.product > 0 && Number.isFinite(i.quantity) && i.quantity > 0);
       if (sitems.length) {
         items = sitems;
-        // also adopt to local for UI
-        const slocal = (server.items||[]).map(i=>({ menu_item:i.menu_item, qty:i.quantity, name:"Item", unit_price:0, total:0 }));
+        const slocal = (server.items||[]).map(i=>({ product:i.product, qty:i.quantity, name:"Item", unit_price:0, total:0 }));
         cartSet(slocal);
       }
     } catch {}
@@ -355,33 +337,32 @@ async function placeOrder(evt){
   if (!items.length) { alert("Cart empty"); return; }
 
   const fd = new FormData(evt.target);
-  const payload = { service_type: fd.get("service_type") || "DINE_IN", items };
+  const payload = {
+    service_type: fd.get("service_type") || "DINE_IN",
+    customer_name: fd.get("customer_name") || "",
+    customer_email: fd.get("customer_email") || "",
+    items
+  };
 
   const statusEl = document.getElementById("order-status");
   const payBtn = document.getElementById("pay-now");
-  const acctBtn = document.getElementById("create-account");
 
   try {
     const order = await api("/api/orders/", { method:"POST", body:JSON.stringify(payload) });
-    await api(`/api/orders/${order.id}/place/`, { method:"POST" });
-
-    // Immediately "open" payment (mock capture)
-    const payable = Number((document.getElementById("payable") && document.getElementById("payable").textContent) || "0");
-    await api("/api/payments/mock/pay/", { method:"POST", body: JSON.stringify({ order_id: order.id, amount: payable }) });
-
-    statusEl.textContent = "Payment successful.";
-    payBtn.style.display="none"; if (acctBtn) acctBtn.style.display="inline-block";
+    // Redirect to Stripe Checkout (server route creates Session)
+    window.location.href = `/create-checkout-session/${order.id}/`;
+    statusEl.textContent = "Redirecting to secure payment…";
+    payBtn.style.display="none";
   } catch(e) {
     const err = (e && e.data && (e.data.detail || JSON.stringify(e.data))) || (e && e.message) || "Unknown";
     statusEl.textContent = "Order error: " + err;
   }
 }
 
-// === Orders (for My Orders page; requires auth) ===
+// === Orders (My Orders page, requires login) ===
 async function loadOrders(){
   const el = document.getElementById("orders-list"); if(!el) return;
 
-  // Hard gate: require login before loading
   if (!auth.access()) {
     el.innerHTML = "<p>Please log in to view your orders.</p>";
     openAuthModal("login");
@@ -401,7 +382,7 @@ async function loadOrders(){
       const when = fmtDT(o.created_at);
       const items = (o.items||[]).map(it=>`
         <li class="row" style="justify-content:space-between;">
-          <span>${it.menu_item_name}</span>
+          <span>${it.product_name}</span>
           <span>Qty: ${it.quantity}</span>
           <span>NPR ${money(it.unit_price)}</span>
           <strong>NPR ${money(it.line_total)}</strong>
@@ -414,7 +395,7 @@ async function loadOrders(){
             <h3 style="margin:0;">Order #${o.id}</h3>
             <span class="muted">${when}</span>
           </div>
-          <p>Status: <strong>${o.status}</strong> &nbsp;·&nbsp; Service: ${o.service_type}</p>
+          <p>Status: <strong>${o.is_paid ? "PAID" : "UNPAID"}</strong> &nbsp;·&nbsp; Service: ${o.service_type || "-"}</p>
           <ul>${items}</ul>
           <div class="space"></div>
           <p><strong>Total: NPR ${total}</strong></p>
@@ -441,7 +422,7 @@ document.addEventListener("DOMContentLoaded", async ()=>{
     renderCart();
     const f = document.getElementById("order-form");
     if (f) f.addEventListener("submit", placeOrder);
-    if(!auth.access()) openAuthModal("login");  // force login on checkout
+    if(!auth.access()) openAuthModal("login");  // require login for checkout
   }
   if(window.page==='orders'){
     if (!auth.access()) { openAuthModal("login"); return; }
